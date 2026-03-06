@@ -1,8 +1,11 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include "json.hpp"
 #include <netinet/in.h>
+#include <string>
 #include <sys/epoll.h>
+#include <unordered_map>
 #include <vector>
 
 class Server {
@@ -13,7 +16,7 @@ public:
   void start();
 
 private:
-  void broadcastMessage(int sender_fd, const char *message);
+  void broadcastMessage(int sender_fd, const char *message, uint32_t len);
   void setNonBlocking(int fd);
 
   int m_server_fd;
@@ -22,6 +25,8 @@ private:
 
   int m_epoll_fd;
   std::vector<int> m_clients;
+  std::unordered_map<int, std::string> m_client_buffers;
+  std::unordered_map<int, std::string> m_client_names;
 };
 
 #endif // SERVER_H

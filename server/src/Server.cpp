@@ -74,7 +74,7 @@ void Server::start() {
 
   // 将监听套接字加入 epoll
   epoll_event event;
-  event.events = EPOLLIN;
+  event.events = EPOLLIN | EPOLLET; // 加 ET 模式
   event.data.fd = m_server_fd;
   if (epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, m_server_fd, &event) == -1) {
     std::cerr << "Failed to add listen socket to epoll\n";
@@ -117,15 +117,15 @@ void Server::start() {
           setNonBlocking(client_fd);
 
           epoll_event client_event;
-          // 监听可读和挂起事件 (EPOLLRDHUP: TCP连接对端关闭或半关闭)
-          client_event.events = EPOLLIN | EPOLLRDHUP;
+          // 监听可读，挂起以及设为 ET 模式
+          client_event.events = EPOLLIN | EPOLLRDHUP | EPOLLET;
           client_event.data.fd = client_fd;
 
           if (epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) ==
               -1) {
             std::cerr << "Failed to add client fd to epoll\n";
             close(client_fd);
-            continue;
+            continue; // 注意: 继续 accept，而不是退出
           }
 
           m_clients.push_back(client_fd);
@@ -140,21 +140,64 @@ void Server::start() {
                     nullptr); // 可选，close 自动从 epoll 中移除
           m_clients.erase(std::remove(m_clients.begin(), m_clients.end(), fd),
                           m_clients.end());
+          m_client_buffers.erase(fd);
+          m_client_names.erase(fd);
           close(fd);
         } else if (events[i].events & EPOLLIN) {
           // 客户端发送消息
           char buffer[1024] = {0};
           while (true) {
-            ssize_t bytes_read = read(fd, buffer, sizeof(buffer) - 1);
+            ssize_t bytes_read = read(fd, buffer, sizeof(buffer));
 
             if (bytes_read > 0) {
-              std::cout << "Received message from client " << fd << ": "
-                        << buffer << std::endl;
-              broadcastMessage(fd, buffer);
-              memset(buffer, 0, sizeof(buffer)); // 清理 buffer 以备后续读取
+              m_client_buffers[fd].append(buffer, bytes_read);
+
+              // 尝试解析完整的消息
+              while (m_client_buffers[fd].size() >= 4) {
+                uint32_t net_len;
+                memcpy(&net_len, m_client_buffers[fd].data(), 4);
+                uint32_t len = ntohl(net_len);
+
+                if (m_client_buffers[fd].size() >= 4 + len) {
+                  std::string message = m_client_buffers[fd].substr(4, len);
+                  m_client_buffers[fd].erase(0, 4 + len);
+
+                  try {
+                    nlohmann::json j = nlohmann::json::parse(message);
+                    std::string type = j.value("type", "");
+
+                    if (type == "login") {
+                      std::string user = j.value("user", "Unknown");
+                      m_client_names[fd] = user;
+                      std::cout << "User '" << user << "' logged in on fd "
+                                << fd << std::endl;
+                    } else if (type == "chat") {
+                      std::string msg = j.value("msg", "");
+                      std::string sender = m_client_names.count(fd)
+                                               ? m_client_names[fd]
+                                               : "Unknown";
+                      std::cout << "[" << sender << "]: " << msg << std::endl;
+
+                      nlohmann::json broadcast_j;
+                      broadcast_j["type"] = "chat";
+                      broadcast_j["user"] = sender;
+                      broadcast_j["msg"] = msg;
+                      std::string broadcast_str = broadcast_j.dump();
+
+                      broadcastMessage(fd, broadcast_str.c_str(),
+                                       broadcast_str.length());
+                    }
+                  } catch (const nlohmann::json::parse_error &e) {
+                    std::cerr << "JSON parse error from fd " << fd << ": "
+                              << e.what() << "\n";
+                  }
+                } else {
+                  break; // 消息不完整，等待更多数据
+                }
+              }
             } else if (bytes_read == -1) {
               if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                break; // 数据已读完
+                break; // ET 模式下数据读完必须收到这个错误
               }
               std::cerr << "Read error on client " << fd << "\n";
 
@@ -163,10 +206,20 @@ void Server::start() {
               m_clients.erase(
                   std::remove(m_clients.begin(), m_clients.end(), fd),
                   m_clients.end());
+              m_client_buffers.erase(fd);
+              m_client_names.erase(fd);
               close(fd);
               break;
             } else if (bytes_read == 0) {
-              // 客户端关闭，由 EPOLLRDHUP 处理
+              // 客户端关闭，通常也可以通过 EPOLLRDHUP 处理
+              std::cout << "Client " << fd << " disconnected (EOF)\n";
+              epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+              m_clients.erase(
+                  std::remove(m_clients.begin(), m_clients.end(), fd),
+                  m_clients.end());
+              m_client_buffers.erase(fd);
+              m_client_names.erase(fd);
+              close(fd);
               break;
             }
           }
@@ -176,10 +229,16 @@ void Server::start() {
   }
 }
 
-void Server::broadcastMessage(int sender_fd, const char *message) {
+void Server::broadcastMessage(int sender_fd, const char *message,
+                              uint32_t len) {
+  uint32_t net_len = htonl(len);
+  std::vector<char> packet(4 + len);
+  memcpy(packet.data(), &net_len, 4);
+  memcpy(packet.data() + 4, message, len);
+
   for (int fd : m_clients) {
     if (fd != sender_fd) {
-      send(fd, message, strlen(message), 0);
+      send(fd, packet.data(), packet.size(), 0);
     }
   }
 }
