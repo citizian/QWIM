@@ -2,6 +2,7 @@
 #define SERVER_H
 
 #include "json.hpp"
+#include <ctime>
 #include <netinet/in.h>
 #include <string>
 #include <sys/epoll.h>
@@ -27,6 +28,8 @@ private:
   std::vector<int> m_clients;
   std::unordered_map<int, std::string> m_client_buffers;
   std::unordered_map<int, std::string> m_client_names;
+  std::unordered_map<std::string, int> m_online_users;
+  std::unordered_map<int, time_t> m_client_last_active;
 };
 
 #endif // SERVER_H

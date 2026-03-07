@@ -85,13 +85,43 @@ void Server::start() {
   epoll_event events[MAX_EVENTS];
 
   while (m_running) {
-    int nfds = epoll_wait(m_epoll_fd, events, MAX_EVENTS, -1);
+    int nfds = epoll_wait(m_epoll_fd, events, MAX_EVENTS,
+                          1000); // 1000ms timeout default
 
     if (nfds == -1) {
       if (errno == EINTR)
         continue; // 可能是被信号中断
       std::cerr << "epoll_wait error\n";
       break;
+    }
+
+    time_t now = time(nullptr);
+    std::vector<int> to_remove;
+    for (const auto &pair : m_client_last_active) {
+      if (now - pair.second > 30) {
+        to_remove.push_back(pair.first);
+      }
+    }
+
+    for (int fd : to_remove) {
+      std::cout << "Client " << fd << " heartbeat timeout. Disconnecting.\n";
+      epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+      m_clients.erase(std::remove(m_clients.begin(), m_clients.end(), fd),
+                      m_clients.end());
+      m_client_buffers.erase(fd);
+      if (m_client_names.count(fd)) {
+        std::string user = m_client_names[fd];
+        m_online_users.erase(user);
+
+        nlohmann::json sys_j;
+        sys_j["type"] = "system";
+        sys_j["msg"] = user + " left";
+        std::string sys_str = sys_j.dump();
+        broadcastMessage(fd, sys_str.c_str(), sys_str.length());
+      }
+      m_client_names.erase(fd);
+      m_client_last_active.erase(fd);
+      close(fd);
     }
 
     for (int i = 0; i < nfds; ++i) {
@@ -129,6 +159,7 @@ void Server::start() {
           }
 
           m_clients.push_back(client_fd);
+          m_client_last_active[client_fd] = time(nullptr);
           std::cout << "Client " << client_fd << " connected!\n";
         }
       } else {
@@ -141,7 +172,18 @@ void Server::start() {
           m_clients.erase(std::remove(m_clients.begin(), m_clients.end(), fd),
                           m_clients.end());
           m_client_buffers.erase(fd);
+          if (m_client_names.count(fd)) {
+            std::string user = m_client_names[fd];
+            m_online_users.erase(user);
+
+            nlohmann::json sys_j;
+            sys_j["type"] = "system";
+            sys_j["msg"] = user + " left";
+            std::string sys_str = sys_j.dump();
+            broadcastMessage(fd, sys_str.c_str(), sys_str.length());
+          }
           m_client_names.erase(fd);
+          m_client_last_active.erase(fd);
           close(fd);
         } else if (events[i].events & EPOLLIN) {
           // 客户端发送消息
@@ -164,28 +206,93 @@ void Server::start() {
 
                   try {
                     nlohmann::json j = nlohmann::json::parse(message);
+
+                    // 只要收到有效的 JSON 消息，就更新活跃时间
+                    m_client_last_active[fd] = time(nullptr);
+
                     std::string type = j.value("type", "");
 
                     if (type == "login") {
                       std::string user = j.value("user", "Unknown");
                       m_client_names[fd] = user;
+                      m_online_users[user] = fd;
                       std::cout << "User '" << user << "' logged in on fd "
                                 << fd << std::endl;
-                    } else if (type == "chat") {
+
+                      nlohmann::json sys_j;
+                      sys_j["type"] = "system";
+                      sys_j["msg"] = user + " joined";
+                      std::string sys_str = sys_j.dump();
+                      broadcastMessage(fd, sys_str.c_str(), sys_str.length());
+                    } else if (type == "private") {
+                      std::string to_user = j.value("to", "");
                       std::string msg = j.value("msg", "");
                       std::string sender = m_client_names.count(fd)
                                                ? m_client_names[fd]
                                                : "Unknown";
-                      std::cout << "[" << sender << "]: " << msg << std::endl;
 
-                      nlohmann::json broadcast_j;
-                      broadcast_j["type"] = "chat";
-                      broadcast_j["user"] = sender;
-                      broadcast_j["msg"] = msg;
-                      std::string broadcast_str = broadcast_j.dump();
+                      std::cout << "[" << sender << " -> " << to_user
+                                << "]: " << msg << std::endl;
 
-                      broadcastMessage(fd, broadcast_str.c_str(),
-                                       broadcast_str.length());
+                      // Find the target fd by username O(1) leveraging
+                      // online_users_
+                      int target_fd = -1;
+                      if (m_online_users.count(to_user)) {
+                        target_fd = m_online_users[to_user];
+                      }
+
+                      if (target_fd != -1) {
+                        nlohmann::json private_j;
+                        private_j["type"] = "private";
+                        private_j["user"] = sender;
+                        private_j["msg"] = msg;
+                        std::string private_str = private_j.dump();
+
+                        uint32_t net_len = htonl(private_str.length());
+                        std::vector<char> packet(4 + private_str.length());
+                        memcpy(packet.data(), &net_len, 4);
+                        memcpy(packet.data() + 4, private_str.c_str(),
+                               private_str.length());
+
+                        send(target_fd, packet.data(), packet.size(), 0);
+                      } else {
+                        // Target user is offline, send error to sender
+                        nlohmann::json err_j;
+                        err_j["type"] = "system";
+                        err_j["msg"] = "user not online";
+                        std::string err_str = err_j.dump();
+
+                        uint32_t net_len = htonl(err_str.length());
+                        std::vector<char> packet(4 + err_str.length());
+                        memcpy(packet.data(), &net_len, 4);
+                        memcpy(packet.data() + 4, err_str.c_str(),
+                               err_str.length());
+
+                        send(fd, packet.data(), packet.size(), 0);
+                        std::cout << "User '" << to_user
+                                  << "' not found. Error sent to sender.\n";
+                      }
+                    } else if (type == "list") {
+                      nlohmann::json list_j;
+                      list_j["type"] = "list";
+                      list_j["users"] = nlohmann::json::array();
+
+                      for (const auto &pair : m_online_users) {
+                        list_j["users"].push_back(pair.first);
+                      }
+
+                      std::string list_str = list_j.dump();
+                      uint32_t net_len = htonl(list_str.length());
+                      std::vector<char> packet(4 + list_str.length());
+                      memcpy(packet.data(), &net_len, 4);
+                      memcpy(packet.data() + 4, list_str.c_str(),
+                             list_str.length());
+
+                      send(fd, packet.data(), packet.size(), 0);
+                      std::cout << "Sent active users list to fd " << fd
+                                << "\n";
+                    } else if (type == "heartbeat") {
+                      m_client_last_active[fd] = time(nullptr);
                     }
                   } catch (const nlohmann::json::parse_error &e) {
                     std::cerr << "JSON parse error from fd " << fd << ": "
@@ -207,7 +314,18 @@ void Server::start() {
                   std::remove(m_clients.begin(), m_clients.end(), fd),
                   m_clients.end());
               m_client_buffers.erase(fd);
+              if (m_client_names.count(fd)) {
+                std::string user = m_client_names[fd];
+                m_online_users.erase(user);
+
+                nlohmann::json sys_j;
+                sys_j["type"] = "system";
+                sys_j["msg"] = user + " left";
+                std::string sys_str = sys_j.dump();
+                broadcastMessage(fd, sys_str.c_str(), sys_str.length());
+              }
               m_client_names.erase(fd);
+              m_client_last_active.erase(fd);
               close(fd);
               break;
             } else if (bytes_read == 0) {
@@ -218,7 +336,18 @@ void Server::start() {
                   std::remove(m_clients.begin(), m_clients.end(), fd),
                   m_clients.end());
               m_client_buffers.erase(fd);
+              if (m_client_names.count(fd)) {
+                std::string user = m_client_names[fd];
+                m_online_users.erase(user);
+
+                nlohmann::json sys_j;
+                sys_j["type"] = "system";
+                sys_j["msg"] = user + " left";
+                std::string sys_str = sys_j.dump();
+                broadcastMessage(fd, sys_str.c_str(), sys_str.length());
+              }
               m_client_names.erase(fd);
+              m_client_last_active.erase(fd);
               close(fd);
               break;
             }
@@ -236,7 +365,8 @@ void Server::broadcastMessage(int sender_fd, const char *message,
   memcpy(packet.data(), &net_len, 4);
   memcpy(packet.data() + 4, message, len);
 
-  for (int fd : m_clients) {
+  for (const auto &pair : m_online_users) {
+    int fd = pair.second;
     if (fd != sender_fd) {
       send(fd, packet.data(), packet.size(), 0);
     }

@@ -1,16 +1,105 @@
 #include "../server/include/json.hpp"
 #include <arpa/inet.h>
+#include <atomic>
 #include <cstring>
 #include <iostream>
 #include <string>
 #include <sys/socket.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
+
+std::atomic<bool> running{true};
+
+void receiveMessages(int sock) {
+  while (running) {
+    uint32_t recv_net_len = 0;
+    ssize_t bytes_read = read(sock, &recv_net_len, 4);
+
+    if (bytes_read == 4) {
+      uint32_t expected_len = ntohl(recv_net_len);
+      std::string response(expected_len, '\0');
+
+      size_t total_read = 0;
+      while (total_read < expected_len && running) {
+        ssize_t r =
+            read(sock, &response[total_read], expected_len - total_read);
+        if (r > 0) {
+          total_read += r;
+        } else if (r == 0) {
+          if (running)
+            std::cout << "\nServer disconnected\n";
+          running = false;
+          return;
+        } else {
+          if (running)
+            std::cerr << "\nRead error\n";
+          running = false;
+          return;
+        }
+      }
+
+      if (!running)
+        break;
+
+      try {
+        nlohmann::json j = nlohmann::json::parse(response);
+        if (j.value("type", "") == "private") {
+          std::cout << "\r[private] " << j.value("user", "Unknown") << ": "
+                    << j.value("msg", "") << "\n";
+          // Reprint the prompt dynamically
+          std::cout << "To: ";
+          std::cout.flush();
+        } else if (j.value("type", "") == "system") {
+          std::cout << "\r[System]: " << j.value("msg", "") << "\n";
+          std::cout << "To (or 'list', 'quit'): ";
+          std::cout.flush();
+        } else if (j.value("type", "") == "list") {
+          std::cout << "\r--- Online Users ---\n";
+          for (const auto &u : j["users"]) {
+            std::cout << "- " << u.get<std::string>() << "\n";
+          }
+          std::cout << "--------------------\n";
+          std::cout << "To (or 'list', 'quit'): ";
+          std::cout.flush();
+        }
+      } catch (const nlohmann::json::parse_error &e) {
+        std::cerr << "\nJSON parse error: " << e.what() << "\n";
+      }
+    } else if (bytes_read == 0) {
+      if (running)
+        std::cout << "\nServer disconnected\n";
+      running = false;
+      break;
+    } else {
+      if (running)
+        std::cerr << "\nRead error\n";
+      running = false;
+      break;
+    }
+  }
+}
+
+void sendHeartbeats(int sock) {
+  while (running) {
+    nlohmann::json hb_json;
+    hb_json["type"] = "heartbeat";
+    std::string hb_str = hb_json.dump();
+
+    uint32_t len = hb_str.length();
+    uint32_t net_len = htonl(len);
+    std::vector<char> packet(4 + len);
+    memcpy(packet.data(), &net_len, 4);
+    memcpy(packet.data() + 4, hb_str.c_str(), len);
+
+    send(sock, packet.data(), packet.size(), 0);
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+  }
+}
 
 int main() {
   int sock = 0;
   struct sockaddr_in serv_addr;
-  char buffer[1024] = {0};
 
   // 创建 socket
   if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -56,24 +145,40 @@ int main() {
     return -1;
   }
 
-  std::cout << "Type messages to chat or 'quit' to exit.\n";
+  // Start the background receive threads
+  std::thread recv_thread(receiveMessages, sock);
+  std::thread hb_thread(sendHeartbeats, sock);
 
+  std::cout << "Type target username and message to chat, or 'quit' to exit.\n";
+
+  std::string target_user;
   std::string message;
-  while (true) {
+  while (running) {
     // 获取用户输入
-    std::cout << "> ";
-    if (!std::getline(std::cin, message)) {
-      break; // 遇到EOF退出
-    }
-
-    if (message == "quit" || message == "exit") {
+    std::cout << "\nTo (or 'list', 'quit'): ";
+    if (!std::getline(std::cin, target_user)) {
       break;
     }
 
-    // 发送 chat 消息
+    if (target_user == "quit" || target_user == "exit") {
+      running = false;
+      break;
+    }
+
     nlohmann::json chat_json;
-    chat_json["type"] = "chat";
-    chat_json["msg"] = message;
+
+    if (target_user == "list") {
+      chat_json["type"] = "list";
+    } else {
+      std::cout << "Msg: ";
+      if (!std::getline(std::cin, message)) {
+        break;
+      }
+      chat_json["type"] = "private";
+      chat_json["to"] = target_user;
+      chat_json["msg"] = message;
+    }
+
     std::string chat_str = chat_json.dump();
 
     uint32_t len = chat_str.length();
@@ -84,54 +189,22 @@ int main() {
 
     if (send(sock, packet.data(), packet.size(), 0) < 0) {
       std::cerr << "Failed to send message\n";
-      break;
-    }
-
-    // 接收服务器的回应 (由于客户端是阻塞模式，直接读取长度然后读取内容)
-    uint32_t recv_net_len = 0;
-    ssize_t bytes_read = read(sock, &recv_net_len, 4);
-    if (bytes_read == 4) {
-      uint32_t expected_len = ntohl(recv_net_len);
-      std::string response(expected_len, '\0');
-
-      size_t total_read = 0;
-      while (total_read < expected_len) {
-        ssize_t r =
-            read(sock, &response[total_read], expected_len - total_read);
-        if (r > 0) {
-          total_read += r;
-        } else if (r == 0) {
-          std::cout << "Server disconnected\n";
-          close(sock);
-          return 0;
-        } else {
-          std::cerr << "Read error\n";
-          close(sock);
-          return -1;
-        }
-      }
-
-      try {
-        nlohmann::json j = nlohmann::json::parse(response);
-        if (j.value("type", "") == "chat") {
-          std::cout << "\r[" << j.value("user", "Unknown")
-                    << "]: " << j.value("msg", "") << "\n> ";
-          std::cout.flush();
-        }
-      } catch (const nlohmann::json::parse_error &e) {
-        std::cerr << "JSON parse error: " << e.what() << "\n";
-      }
-    } else if (bytes_read == 0) {
-      std::cout << "Server disconnected\n";
-      break;
-    } else {
-      std::cerr << "Read error\n";
+      running = false;
       break;
     }
   }
 
-  // 关闭 socket
+  // Clean shutdown
+  running = false;
+  shutdown(sock, SHUT_RDWR); // unblock the read thread if it's waiting
   close(sock);
+
+  if (recv_thread.joinable()) {
+    recv_thread.join();
+  }
+  if (hb_thread.joinable()) {
+    hb_thread.join();
+  }
 
   return 0;
 }
