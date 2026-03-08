@@ -1,0 +1,5 @@
+[2026-03-09 00:36:15] [INFO] Server is listening on port 8080...
+[2026-03-09 00:36:16] [INFO] Client 6 connected!
+[2026-03-09 00:36:16] [INFO] User 'Tester' logged in on fd 6
+[2026-03-09 00:36:16] [INFO] Sent active users list to fd 6
+[2026-03-09 00:36:16] [INFO] Client 6 disconnected (EOF)

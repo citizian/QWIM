@@ -1,4 +1,4 @@
-#include "../server/include/json.hpp"
+#include "json.hpp"
 #include <arpa/inet.h>
 #include <atomic>
 #include <cstring>
@@ -48,11 +48,11 @@ void receiveMessages(int sock) {
           std::cout << "\r[private] " << j.value("user", "Unknown") << ": "
                     << j.value("msg", "") << "\n";
           // Reprint the prompt dynamically
-          std::cout << "To: ";
+          std::cout << "> ";
           std::cout.flush();
         } else if (j.value("type", "") == "system") {
           std::cout << "\r[System]: " << j.value("msg", "") << "\n";
-          std::cout << "To (or 'list', 'quit'): ";
+          std::cout << "> ";
           std::cout.flush();
         } else if (j.value("type", "") == "list") {
           std::cout << "\r--- Online Users ---\n";
@@ -60,7 +60,16 @@ void receiveMessages(int sock) {
             std::cout << "- " << u.get<std::string>() << "\n";
           }
           std::cout << "--------------------\n";
-          std::cout << "To (or 'list', 'quit'): ";
+          std::cout << "> ";
+          std::cout.flush();
+        } else if (j.value("type", "") == "chat") {
+          std::cout << "\r[all] " << j.value("user", "Unknown") << ": "
+                    << j.value("msg", "") << "\n";
+          std::cout << "> ";
+          std::cout.flush();
+        } else if (j.value("type", "") == "history") {
+          std::cout << "\r[History] " << j.value("msg", "") << "\n";
+          std::cout << "> ";
           std::cout.flush();
         }
       } catch (const nlohmann::json::parse_error &e) {
@@ -149,34 +158,57 @@ int main() {
   std::thread recv_thread(receiveMessages, sock);
   std::thread hb_thread(sendHeartbeats, sock);
 
-  std::cout << "Type target username and message to chat, or 'quit' to exit.\n";
+  std::cout << "Chat session started. Type /help for commands, or simply type "
+               "to chat with everyone.\n";
 
-  std::string target_user;
-  std::string message;
+  std::string input;
   while (running) {
     // 获取用户输入
-    std::cout << "\nTo (or 'list', 'quit'): ";
-    if (!std::getline(std::cin, target_user)) {
+    std::cout << "> ";
+    if (!std::getline(std::cin, input)) {
       break;
     }
 
-    if (target_user == "quit" || target_user == "exit") {
-      running = false;
-      break;
-    }
+    if (input.empty())
+      continue;
 
     nlohmann::json chat_json;
 
-    if (target_user == "list") {
-      chat_json["type"] = "list";
-    } else {
-      std::cout << "Msg: ";
-      if (!std::getline(std::cin, message)) {
+    if (input[0] == '/') {
+      if (input == "/quit" || input == "/exit") {
+        running = false;
         break;
+      } else if (input == "/list") {
+        chat_json["type"] = "list";
+      } else if (input == "/help") {
+        std::cout << "--- Commands ---\n"
+                  << "/help - Show this menu\n"
+                  << "/list - List online users\n"
+                  << "/pm <user> <msg> - Send a private message\n"
+                  << "/quit or /exit - Leave the chat\n"
+                  << "<text> - Send a message to everyone (group chat)\n"
+                  << "----------------\n";
+        continue;
+      } else if (input.find("/pm ") == 0) {
+        size_t space_pos = input.find(' ', 4);
+        if (space_pos != std::string::npos && space_pos > 4) {
+          std::string target_user = input.substr(4, space_pos - 4);
+          std::string message = input.substr(space_pos + 1);
+          chat_json["type"] = "private";
+          chat_json["to"] = target_user;
+          chat_json["msg"] = message;
+        } else {
+          std::cout << "Usage: /pm <user> <message>\n";
+          continue;
+        }
+      } else {
+        std::cout << "Unknown command. Type /help for a list of commands.\n";
+        continue;
       }
-      chat_json["type"] = "private";
-      chat_json["to"] = target_user;
-      chat_json["msg"] = message;
+    } else {
+      // Normal group chat
+      chat_json["type"] = "chat";
+      chat_json["msg"] = input;
     }
 
     std::string chat_str = chat_json.dump();
