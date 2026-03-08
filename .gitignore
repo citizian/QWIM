@@ -4,6 +4,13 @@
 
 # Executables
 server_bin
+client_bin
 *.exe
 *.out
 *.app
+
+# Build directory
+build/
+
+# Logs
+logs/
