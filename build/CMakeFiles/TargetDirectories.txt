@@ -1,4 +1,0 @@
-/home/debian/project/QWIM/build/CMakeFiles/server_bin.dir
-/home/debian/project/QWIM/build/CMakeFiles/client_bin.dir
-/home/debian/project/QWIM/build/CMakeFiles/edit_cache.dir
-/home/debian/project/QWIM/build/CMakeFiles/rebuild_cache.dir

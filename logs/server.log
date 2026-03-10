@@ -3,3 +3,73 @@
 [2026-03-09 00:36:16] [INFO] User 'Tester' logged in on fd 6
 [2026-03-09 00:36:16] [INFO] Sent active users list to fd 6
 [2026-03-09 00:36:16] [INFO] Client 6 disconnected (EOF)
+[2026-03-10 16:14:01] [INFO] Server is listening on port 8080...
+[2026-03-10 16:14:02] [INFO] Client 6 connected!
+[2026-03-10 16:14:02] [INFO] User 'Alice' logged in on fd 6
+[2026-03-10 16:14:02] [INFO] Sent active users list to fd 6
+[2026-03-10 16:14:02] [CHAT] [Alice to all]: Hello World
+[2026-03-10 16:14:02] [CHAT] [Alice -> Alice]: Self PM Test
+[2026-03-10 16:14:02] [INFO] Client 6 disconnected (EOF)
+[2026-03-10 16:22:18] [INFO] Server is listening on port 8080...
+[2026-03-10 16:22:19] [INFO] Client 6 connected!
+[2026-03-10 16:22:19] [INFO] User 'Alice2' logged in on fd 6
+[2026-03-10 16:22:19] [INFO] Sent active users list to fd 6
+[2026-03-10 16:22:19] [CHAT] [Alice2 to all]: Hello Buffers!
+[2026-03-10 16:22:19] [INFO] Client 6 disconnected (EOF)
+[2026-03-10 17:19:01] [INFO] Server is listening on port 8080...
+[2026-03-10 17:19:02] [INFO] Client 6 connected!
+[2026-03-10 17:19:02] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 17:19:02] [INFO] Sent active users list to fd 6
+[2026-03-10 17:19:02] [INFO] Client 6 disconnected
+[2026-03-10 17:20:22] [INFO] Server is listening on port 8080...
+[2026-03-10 17:20:23] [INFO] Client 6 connected!
+[2026-03-10 17:20:23] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 17:20:23] [INFO] Sent active users list to fd 6
+[2026-03-10 17:20:23] [INFO] Client 6 disconnected
+[2026-03-10 17:21:49] [ERROR] Failed to bind socket
+[2026-03-10 17:21:49] [INFO] Client 6 connected!
+[2026-03-10 17:21:49] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 17:21:49] [INFO] Sent active users list to fd 6
+[2026-03-10 17:21:49] [INFO] Client 6 disconnected
+[2026-03-10 17:22:20] [INFO] Server is listening on port 8080...
+[2026-03-10 17:22:21] [INFO] Client 6 connected!
+[2026-03-10 17:22:21] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 17:22:21] [INFO] Sent active users list to fd 6
+[2026-03-10 17:22:21] [INFO] Client 6 disconnected
+[2026-03-10 17:24:22] [ERROR] Failed to bind socket
+[2026-03-10 17:24:23] [INFO] Client 6 connected!
+[2026-03-10 17:24:23] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 17:24:23] [INFO] Sent active users list to fd 6
+[2026-03-10 17:24:23] [INFO] Client 6 disconnected
+[2026-03-10 17:24:43] [INFO] Server is listening on port 8080...
+[2026-03-10 17:25:36] [INFO] Server is listening on port 8080...
+[2026-03-10 17:25:37] [INFO] Client 6 connected!
+[2026-03-10 17:25:37] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 17:25:37] [INFO] Sent active users list to fd 6
+[2026-03-10 17:25:37] [CHAT] [ReactorUser to all]: This is a test of the EventLoop!
+[2026-03-10 17:25:37] [INFO] Client 6 disconnected
+[2026-03-10 18:07:12] [INFO] Server is listening on port 8080...
+[2026-03-10 18:07:13] [INFO] Client 6 connected!
+[2026-03-10 18:07:13] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 18:07:13] [INFO] Sent active users list to fd 6
+[2026-03-10 18:07:13] [CHAT] [ReactorUser to all]: This is a test of the EventLoop!
+[2026-03-10 18:07:13] [INFO] Client 6 disconnected
+[2026-03-10 18:11:23] [INFO] Server is listening on port 8080...
+[2026-03-10 18:11:38] [INFO] Client 6 connected!
+[2026-03-10 18:11:41] [INFO] User 'yza' logged in on fd 6
+[2026-03-10 18:11:47] [INFO] Client 7 connected!
+[2026-03-10 18:11:50] [INFO] User 'yly' logged in on fd 7
+[2026-03-10 18:11:58] [CHAT] [yza to all]: haha
+[2026-03-10 18:12:19] [CHAT] [yza -> yly]: loveu
+[2026-03-10 18:12:30] [CHAT] [yly to all]: yes
+[2026-03-10 18:12:36] [INFO] Client 6 disconnected
+[2026-03-10 18:12:42] [CHAT] [yly to all]: exit
+[2026-03-10 18:12:43] [CHAT] [yly to all]: hh
+[2026-03-10 18:12:47] [CHAT] [yly to all]: hh
+[2026-03-10 18:13:00] [INFO] Client 7 disconnected
+[2026-03-10 18:37:29] [INFO] Server is listening on port 8080...
+[2026-03-10 18:37:30] [INFO] Client 6 connected!
+[2026-03-10 18:37:30] [INFO] User 'ReactorUser' logged in on fd 6
+[2026-03-10 18:37:30] [INFO] Sent active users list to fd 6
+[2026-03-10 18:37:30] [CHAT] [ReactorUser to all]: This is a test of the EventLoop!
+[2026-03-10 18:37:30] [INFO] Client 6 disconnected
