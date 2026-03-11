@@ -17,3 +17,6 @@ logs/
 
 # Cache
 .cache/
+
+#test
+test/
