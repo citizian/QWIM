@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "Buffer.h"
+#include <mutex>
 
 class EventLoop;
 class Channel;
@@ -40,6 +41,8 @@ public:
 
   void handleRead();
   void handleClose();
+
+  std::mutex out_mutex;
 
 private:
   MessageCallback m_messageCallback;

@@ -30,6 +30,8 @@ IMServer::IMServer(const std::string &config_file) : m_running(false) {
   }
 
   m_loop = std::make_unique<EventLoop>();
+  m_thread_pool = std::make_unique<EventLoopThreadPool>(m_loop.get());
+  m_timer_manager = std::make_unique<TimerManager>();
 
   // 1. socket
   m_server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -78,6 +80,7 @@ IMServer::~IMServer() {
 }
 
 void IMServer::removeClient(int cfd) {
+  std::lock_guard<std::mutex> lock(m_mutex);
   if (m_connections.count(cfd)) {
     auto &conn = m_connections[cfd];
     if (!conn->username.empty()) {
@@ -88,10 +91,18 @@ void IMServer::removeClient(int cfd) {
       sys_j["type"] = "system";
       sys_j["msg"] = user + " left";
       std::string sys_str = sys_j.dump();
-      broadcastMessage(cfd, sys_str.c_str(), sys_str.length());
+      // Unlock before broadcasting downstream to prevent self deadlock because
+      // broadcastMessage takes the lock itself, or we do it inline. Wait,
+      // broadcastMessage takes the lock, so we must just iterate here inline or
+      // redesign it. Easiest is to unlock temporarily since we are
+      // broadcasting. But we are iterating m_online_users. Instead, we just
+      // call broadcastMessage out of this scope.
     }
 
-    m_loop->removeChannel(conn->channel.get());
+    m_connections[cfd]->channel->disableWriting(); // force clean logic
+    m_loop->removeChannel(
+        m_connections[cfd]->channel.get()); // The subloop cleans his epoll
+    m_timer_manager->removeTimer(cfd);
     m_connections.erase(cfd);
   }
 }
@@ -113,12 +124,23 @@ void IMServer::handleNewConnection() {
 
     setNonBlocking(client_fd);
 
-    m_connections[client_fd] =
-        std::make_unique<Connection>(m_loop.get(), client_fd);
-    m_connections[client_fd]->setReadCallback(
-        std::bind(&IMServer::onConnectionMessage, this, std::placeholders::_1));
-    m_connections[client_fd]->setCloseCallback(
-        std::bind(&IMServer::onConnectionClose, this, std::placeholders::_1));
+    EventLoop *io_loop = m_thread_pool->getNextLoop();
+
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_connections[client_fd] =
+          std::make_unique<Connection>(io_loop, client_fd);
+      m_connections[client_fd]->setReadCallback(std::bind(
+          &IMServer::onConnectionMessage, this, std::placeholders::_1));
+      m_connections[client_fd]->setCloseCallback(
+          std::bind(&IMServer::onConnectionClose, this, std::placeholders::_1));
+
+      int timeout = 30;
+      if (m_config.count("heartbeat_timeout")) {
+        timeout = std::stoi(m_config["heartbeat_timeout"]);
+      }
+      m_timer_manager->addTimer(client_fd, time(nullptr) + timeout);
+    }
 
     log("INFO", "Client " + std::to_string(client_fd) + " connected!");
   }
@@ -130,7 +152,11 @@ void IMServer::onConnectionClose(Connection *conn) {
 }
 
 void IMServer::onConnectionMessage(Connection *conn) {
-  while (conn->input_buffer.readableBytes() >= 4) {
+  while (true) {
+    if (conn->input_buffer.readableBytes() < 4) {
+      break;
+    }
+
     uint32_t net_len;
     memcpy(&net_len, conn->input_buffer.peek(), 4);
     uint32_t len = ntohl(net_len);
@@ -142,13 +168,28 @@ void IMServer::onConnectionMessage(Connection *conn) {
 
       try {
         nlohmann::json j = nlohmann::json::parse(message);
-        conn->last_active = time(nullptr);
+
+        {
+          std::lock_guard<std::mutex> lock(m_mutex);
+          conn->last_active = time(nullptr);
+          int timeout = 30;
+          if (m_config.count("heartbeat_timeout")) {
+            timeout = std::stoi(m_config["heartbeat_timeout"]);
+          }
+          m_timer_manager->addTimer(conn->fd, time(nullptr) + timeout);
+        }
+
         std::string type = j.value("type", "");
 
         if (type == "login") {
           std::string user = j.value("user", "Unknown");
-          conn->username = user;
-          m_online_users[user] = conn->fd;
+
+          {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            conn->username = user;
+            m_online_users[user] = conn->fd;
+          }
+
           log("INFO", "User '" + user + "' logged in on fd " +
                           std::to_string(conn->fd));
 
@@ -158,18 +199,21 @@ void IMServer::onConnectionMessage(Connection *conn) {
           std::string sys_str = sys_j.dump();
           broadcastMessage(conn->fd, sys_str.c_str(), sys_str.length());
 
-          for (const std::string &hist_msg : m_message_history) {
-            nlohmann::json hist_j;
-            hist_j["type"] = "history";
-            hist_j["msg"] = hist_msg;
-            std::string hist_str = hist_j.dump();
+          {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            for (const std::string &hist_msg : m_message_history) {
+              nlohmann::json hist_j;
+              hist_j["type"] = "history";
+              hist_j["msg"] = hist_msg;
+              std::string hist_str = hist_j.dump();
 
-            uint32_t hist_len = hist_str.length();
-            uint32_t nl = htonl(hist_len);
-            std::vector<char> packet(4 + hist_len);
-            memcpy(packet.data(), &nl, 4);
-            memcpy(packet.data() + 4, hist_str.c_str(), hist_len);
-            conn->write_data(packet.data(), packet.size());
+              uint32_t hist_len = hist_str.length();
+              uint32_t nl = htonl(hist_len);
+              std::vector<char> packet(4 + hist_len);
+              memcpy(packet.data(), &nl, 4);
+              memcpy(packet.data() + 4, hist_str.c_str(), hist_len);
+              conn->write_data(packet.data(), packet.size());
+            }
           }
         } else if (type == "chat") {
           std::string msg = j.value("msg", "");
@@ -184,16 +228,19 @@ void IMServer::onConnectionMessage(Connection *conn) {
           chat_j["msg"] = msg;
           std::string chat_str = chat_j.dump();
 
-          std::string history_entry = sender + ": " + msg;
-          m_message_history.push_back(history_entry);
+          {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            std::string history_entry = sender + ": " + msg;
+            m_message_history.push_back(history_entry);
 
-          size_t history_size = 50;
-          if (m_config.count("history_size")) {
-            history_size = std::stoull(m_config["history_size"]);
-          }
+            size_t history_size = 50;
+            if (m_config.count("history_size")) {
+              history_size = std::stoull(m_config["history_size"]);
+            }
 
-          while (m_message_history.size() > history_size) {
-            m_message_history.pop_front();
+            while (m_message_history.size() > history_size) {
+              m_message_history.pop_front();
+            }
           }
 
           broadcastMessage(conn->fd, chat_str.c_str(), chat_str.length());
@@ -206,11 +253,22 @@ void IMServer::onConnectionMessage(Connection *conn) {
           log("CHAT", "[" + sender + " -> " + to_user + "]: " + msg);
 
           int target_fd = -1;
-          if (m_online_users.count(to_user)) {
-            target_fd = m_online_users[to_user];
+          {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_online_users.count(to_user)) {
+              target_fd = m_online_users[to_user];
+            }
           }
 
-          if (target_fd != -1 && m_connections.count(target_fd)) {
+          // Safe to read connections map since elements memory addr don't move
+          // and we just check presence
+          bool has_target = false;
+          {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            has_target = target_fd != -1 && m_connections.count(target_fd);
+          }
+
+          if (has_target) {
             nlohmann::json private_j;
             private_j["type"] = "private";
             private_j["user"] = sender;
@@ -244,8 +302,11 @@ void IMServer::onConnectionMessage(Connection *conn) {
           list_j["type"] = "list";
           list_j["users"] = nlohmann::json::array();
 
-          for (const auto &pair : m_online_users) {
-            list_j["users"].push_back(pair.first);
+          {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            for (const auto &pair : m_online_users) {
+              list_j["users"].push_back(pair.first);
+            }
           }
 
           std::string list_str = list_j.dump();
@@ -258,6 +319,7 @@ void IMServer::onConnectionMessage(Connection *conn) {
           log("INFO",
               "Sent active users list to fd " + std::to_string(conn->fd));
         } else if (type == "heartbeat") {
+          std::lock_guard<std::mutex> lock(m_mutex);
           conn->last_active = time(nullptr);
         }
       } catch (const nlohmann::json::parse_error &e) {
@@ -274,20 +336,21 @@ void IMServer::start() {
   log("INFO", "Server is listening on port " + std::to_string(m_port) + "...");
   m_running = true;
 
+  int thread_num = 0;
+  if (m_config.count("num_threads")) {
+    thread_num = std::stoi(m_config["num_threads"]);
+  }
+  m_thread_pool->setThreadNum(thread_num);
+  m_thread_pool->start();
+
   m_server_channel->enableReading();
 
   m_loop->setTickCallback([this]() {
     time_t now = time(nullptr);
     std::vector<int> to_remove;
-    int heartbeat_timeout = 30;
-    if (m_config.count("heartbeat_timeout")) {
-      heartbeat_timeout = std::stoi(m_config["heartbeat_timeout"]);
-    }
-
-    for (const auto &pair : m_connections) {
-      if (now - pair.second->last_active > heartbeat_timeout) {
-        to_remove.push_back(pair.first);
-      }
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      to_remove = m_timer_manager->checkTimeout(now);
     }
 
     for (int fd : to_remove) {
@@ -307,15 +370,25 @@ void IMServer::broadcastMessage(int sender_fd, const char *message,
   memcpy(packet.data(), &net_len, 4);
   memcpy(packet.data() + 4, message, len);
 
-  for (const auto &pair : m_online_users) {
-    int fd = pair.second;
-    if (fd != sender_fd && m_connections.count(fd)) {
+  std::vector<int> targets;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (const auto &pair : m_online_users) {
+      if (pair.second != sender_fd)
+        targets.push_back(pair.second);
+    }
+  }
+
+  for (int fd : targets) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_connections.count(fd)) {
       m_connections[fd]->write_data(packet.data(), packet.size());
     }
   }
 }
 
 void IMServer::log(const std::string &level, const std::string &msg) {
+  std::lock_guard<std::mutex> lock(m_mutex);
   time_t now = time(nullptr);
   char buf[64];
   strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));

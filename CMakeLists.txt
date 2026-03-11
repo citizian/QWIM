@@ -10,7 +10,7 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 
 find_package(Threads REQUIRED)
 
-add_executable(server_bin src/main.cpp src/IMServer.cpp src/Connection.cpp src/EventLoop.cpp src/Channel.cpp)
+add_executable(server_bin src/main.cpp src/IMServer.cpp src/Connection.cpp src/EventLoop.cpp src/Channel.cpp src/TimerManager.cpp src/EventLoopThread.cpp src/EventLoopThreadPool.cpp)
 target_link_libraries(server_bin PRIVATE Threads::Threads)
 
 add_executable(client_bin src/client.cpp)

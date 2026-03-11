@@ -67,6 +67,7 @@ ssize_t Connection::read_data() {
 }
 
 void Connection::write_data(const char *data, size_t len) {
+  std::unique_lock<std::mutex> lock(out_mutex);
   output_buffer.append(data, len);
   if (!channel->isWriting()) {
     channel->enableWriting();
@@ -74,6 +75,7 @@ void Connection::write_data(const char *data, size_t len) {
 }
 
 void Connection::handleWrite() {
+  std::unique_lock<std::mutex> lock(out_mutex);
   if (output_buffer.readableBytes() == 0) {
     if (channel->isWriting()) {
       channel->disableWriting();
@@ -92,6 +94,7 @@ void Connection::handleWrite() {
     }
   } else if (bytes_written < 0) {
     if (errno != EAGAIN && errno != EWOULDBLOCK) {
+      lock.unlock(); // Prevent deadlock since handleClose goes up to IMServer
       handleClose();
     }
   }

@@ -4,6 +4,8 @@
 #include "Channel.h"
 #include "Connection.h"
 #include "EventLoop.h"
+#include "EventLoopThreadPool.h"
+#include "TimerManager.h"
 #include "json.hpp"
 
 #include <ctime>
@@ -36,7 +38,11 @@ private:
   bool m_running;
 
   std::unique_ptr<EventLoop> m_loop;
+  std::unique_ptr<EventLoopThreadPool> m_thread_pool;
   std::unique_ptr<Channel> m_server_channel;
+  std::unique_ptr<TimerManager> m_timer_manager;
+
+  std::mutex m_mutex;
 
   std::unordered_map<int, std::unique_ptr<Connection>> m_connections;
   std::unordered_map<std::string, int> m_online_users;
