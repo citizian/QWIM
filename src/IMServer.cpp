@@ -1,5 +1,16 @@
 #include "IMServer.h"
+#include "Logger.h"
+#include "AsyncLogger.h"
 #include <cstring>
+
+std::unique_ptr<AsyncLogger> g_asyncLogger;
+
+void asyncOutput(const char* msg, int len) {
+    if (g_asyncLogger) {
+        g_asyncLogger->append(msg, len);
+    }
+}
+
 #include <fcntl.h>
 #include <iostream>
 #include <unistd.h>
@@ -22,7 +33,10 @@ IMServer::IMServer(const std::string &config_file) : m_running(false) {
   if (m_config.count("logfile")) {
     logfile = m_config["logfile"];
   }
-  m_log_file.open(logfile, std::ios::app);
+  
+  g_asyncLogger.reset(new AsyncLogger(logfile, 100 * 1024 * 1024));
+  Logger::setOutput(asyncOutput);
+  g_asyncLogger->start();
 
   m_port = 8080;
   if (m_config.count("port")) {
@@ -36,7 +50,7 @@ IMServer::IMServer(const std::string &config_file) : m_running(false) {
   // 1. socket
   m_server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (m_server_fd == -1) {
-    log("ERROR", "Failed to create socket");
+    LOG_ERROR << "Failed to create socket";
     exit(1);
   }
 
@@ -54,7 +68,7 @@ IMServer::IMServer(const std::string &config_file) : m_running(false) {
 
   // 2. bind
   if (bind(m_server_fd, (struct sockaddr *)&address, sizeof(address)) == -1) {
-    log("ERROR", "Failed to bind socket");
+    LOG_ERROR << "Failed to bind socket";
     close(m_server_fd);
     exit(1);
   }
@@ -72,8 +86,9 @@ IMServer::IMServer(const std::string &config_file) : m_running(false) {
 }
 
 IMServer::~IMServer() {
-  if (m_log_file.is_open()) {
-    m_log_file.close();
+  if (g_asyncLogger) {
+    g_asyncLogger->stop();
+    g_asyncLogger.reset();
   }
   m_running = false;
   close(m_server_fd);
@@ -118,7 +133,7 @@ void IMServer::handleNewConnection() {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         break;
       }
-      log("ERROR", "Failed to accept connection");
+      LOG_ERROR << "Failed to accept connection";
       break;
     }
 
@@ -142,12 +157,12 @@ void IMServer::handleNewConnection() {
       m_timer_manager->addTimer(client_fd, time(nullptr) + timeout);
     }
 
-    log("INFO", "Client " + std::to_string(client_fd) + " connected!");
+    LOG_INFO << "Client " + std::to_string(client_fd) + " connected!";
   }
 }
 
 void IMServer::onConnectionClose(Connection *conn) {
-  log("INFO", "Client " + std::to_string(conn->fd) + " disconnected");
+  LOG_INFO << "Client " + std::to_string(conn->fd) + " disconnected";
   removeClient(conn->fd);
 }
 
@@ -190,8 +205,8 @@ void IMServer::onConnectionMessage(Connection *conn) {
             m_online_users[user] = conn->fd;
           }
 
-          log("INFO", "User '" + user + "' logged in on fd " +
-                          std::to_string(conn->fd));
+          LOG_INFO << "User '" + user + "' logged in on fd " +
+                          std::to_string(conn->fd);
 
           nlohmann::json sys_j;
           sys_j["type"] = "system";
@@ -220,7 +235,7 @@ void IMServer::onConnectionMessage(Connection *conn) {
           std::string sender =
               conn->username.empty() ? "Unknown" : conn->username;
 
-          log("CHAT", "[" + sender + " to all]: " + msg);
+          LOG_INFO << "[" + sender + " to all]: " + msg;
 
           nlohmann::json chat_j;
           chat_j["type"] = "chat";
@@ -250,7 +265,7 @@ void IMServer::onConnectionMessage(Connection *conn) {
           std::string sender =
               conn->username.empty() ? "Unknown" : conn->username;
 
-          log("CHAT", "[" + sender + " -> " + to_user + "]: " + msg);
+          LOG_INFO << "[" + sender + " -> " + to_user + "]: " + msg;
 
           int target_fd = -1;
           {
@@ -294,8 +309,7 @@ void IMServer::onConnectionMessage(Connection *conn) {
             memcpy(packet.data() + 4, err_str.c_str(), err_str.length());
 
             conn->write_data(packet.data(), packet.size());
-            log("INFO",
-                "User '" + to_user + "' not found. Error sent to sender.");
+            LOG_INFO << "User '" + to_user + "' not found. Error sent to sender.";
           }
         } else if (type == "list") {
           nlohmann::json list_j;
@@ -316,15 +330,14 @@ void IMServer::onConnectionMessage(Connection *conn) {
           memcpy(packet.data() + 4, list_str.c_str(), list_str.length());
 
           conn->write_data(packet.data(), packet.size());
-          log("INFO",
-              "Sent active users list to fd " + std::to_string(conn->fd));
+          LOG_INFO << "Sent active users list to fd " + std::to_string(conn->fd);
         } else if (type == "heartbeat") {
           std::lock_guard<std::mutex> lock(m_mutex);
           conn->last_active = time(nullptr);
         }
       } catch (const nlohmann::json::parse_error &e) {
-        log("ERROR", "JSON parse error from fd " + std::to_string(conn->fd) +
-                         ": " + e.what());
+        LOG_ERROR << "JSON parse error from fd " + std::to_string(conn->fd) +
+                         ": " + e.what();
       }
     } else {
       break;
@@ -333,7 +346,7 @@ void IMServer::onConnectionMessage(Connection *conn) {
 }
 
 void IMServer::start() {
-  log("INFO", "Server is listening on port " + std::to_string(m_port) + "...");
+  LOG_INFO << "Server is listening on port " + std::to_string(m_port) + "...";
   m_running = true;
 
   int thread_num = 0;
@@ -354,8 +367,8 @@ void IMServer::start() {
     }
 
     for (int fd : to_remove) {
-      log("INFO", "Client " + std::to_string(fd) +
-                      " heartbeat timeout. Disconnecting.");
+      LOG_INFO << "Client " + std::to_string(fd) +
+                      " heartbeat timeout. Disconnecting.";
       removeClient(fd);
     }
   });
@@ -387,18 +400,7 @@ void IMServer::broadcastMessage(int sender_fd, const char *message,
   }
 }
 
-void IMServer::log(const std::string &level, const std::string &msg) {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  time_t now = time(nullptr);
-  char buf[64];
-  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
-  std::string log_line = "[" + std::string(buf) + "] [" + level + "] " + msg;
-  std::cout << log_line << std::endl;
-  if (m_log_file.is_open()) {
-    m_log_file << log_line << std::endl;
-    m_log_file.flush();
-  }
-}
+
 
 void IMServer::loadConfig(const std::string &filename) {
   std::ifstream file(filename);

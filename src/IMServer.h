@@ -49,8 +49,6 @@ private:
   std::deque<std::string> m_message_history;
   std::unordered_map<std::string, std::string> m_config;
 
-  std::ofstream m_log_file;
-  void log(const std::string &level, const std::string &msg);
   void loadConfig(const std::string &filename);
 };
 
