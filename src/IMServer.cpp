@@ -1,6 +1,9 @@
 #include "IMServer.h"
 #include "Logger.h"
 #include "AsyncLogger.h"
+#include "Config.h"
+#include "Router.h"
+#include "ChatService.h"
 #include <cstring>
 
 std::unique_ptr<AsyncLogger> g_asyncLogger;
@@ -27,25 +30,29 @@ void IMServer::setNonBlocking(int fd) {
 }
 
 IMServer::IMServer(const std::string &config_file) : m_running(false) {
-  loadConfig(config_file);
+  Config::instance().load(config_file);
 
-  std::string logfile = "logs/server.log";
-  if (m_config.count("logfile")) {
-    logfile = m_config["logfile"];
-  }
+  std::string logfile = Config::instance().getString("logfile", "logs/server.log");
   
+  std::string log_level = Config::instance().getString("log_level", "INFO");
+  if (log_level == "TRACE") Logger::setLogLevel(TRACE);
+  else if (log_level == "DEBUG") Logger::setLogLevel(DEBUG);
+  else if (log_level == "INFO") Logger::setLogLevel(INFO);
+  else if (log_level == "WARN") Logger::setLogLevel(WARN);
+  else if (log_level == "ERROR") Logger::setLogLevel(ERROR);
+  else if (log_level == "FATAL") Logger::setLogLevel(FATAL);
+
   g_asyncLogger.reset(new AsyncLogger(logfile, 100 * 1024 * 1024));
   Logger::setOutput(asyncOutput);
   g_asyncLogger->start();
 
-  m_port = 8080;
-  if (m_config.count("port")) {
-    m_port = std::stoi(m_config["port"]);
-  }
+  m_port = Config::instance().getInt("port", 8080);
 
   m_loop = std::make_unique<EventLoop>();
   m_thread_pool = std::make_unique<EventLoopThreadPool>(m_loop.get());
   m_timer_manager = std::make_unique<TimerManager>();
+
+  ChatService::instance().init();
 
   // 1. socket
   m_server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -97,22 +104,7 @@ IMServer::~IMServer() {
 void IMServer::removeClient(int cfd) {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_connections.count(cfd)) {
-    auto &conn = m_connections[cfd];
-    if (!conn->username.empty()) {
-      std::string user = conn->username;
-      m_online_users.erase(user);
-
-      nlohmann::json sys_j;
-      sys_j["type"] = "system";
-      sys_j["msg"] = user + " left";
-      std::string sys_str = sys_j.dump();
-      // Unlock before broadcasting downstream to prevent self deadlock because
-      // broadcastMessage takes the lock itself, or we do it inline. Wait,
-      // broadcastMessage takes the lock, so we must just iterate here inline or
-      // redesign it. Easiest is to unlock temporarily since we are
-      // broadcasting. But we are iterating m_online_users. Instead, we just
-      // call broadcastMessage out of this scope.
-    }
+    ChatService::instance().onDisconnect(m_connections[cfd].get());
 
     m_connections[cfd]->channel->disableWriting(); // force clean logic
     m_loop->removeChannel(
@@ -150,10 +142,7 @@ void IMServer::handleNewConnection() {
       m_connections[client_fd]->setCloseCallback(
           std::bind(&IMServer::onConnectionClose, this, std::placeholders::_1));
 
-      int timeout = 30;
-      if (m_config.count("heartbeat_timeout")) {
-        timeout = std::stoi(m_config["heartbeat_timeout"]);
-      }
+      int timeout = Config::instance().getInt("heartbeat_timeout", 30);
       m_timer_manager->addTimer(client_fd, time(nullptr) + timeout);
     }
 
@@ -187,154 +176,13 @@ void IMServer::onConnectionMessage(Connection *conn) {
         {
           std::lock_guard<std::mutex> lock(m_mutex);
           conn->last_active = time(nullptr);
-          int timeout = 30;
-          if (m_config.count("heartbeat_timeout")) {
-            timeout = std::stoi(m_config["heartbeat_timeout"]);
-          }
+          int timeout = Config::instance().getInt("heartbeat_timeout", 30);
           m_timer_manager->addTimer(conn->fd, time(nullptr) + timeout);
         }
 
         std::string type = j.value("type", "");
+        Router::instance().route(type, conn, j, this);
 
-        if (type == "login") {
-          std::string user = j.value("user", "Unknown");
-
-          {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            conn->username = user;
-            m_online_users[user] = conn->fd;
-          }
-
-          LOG_INFO << "User '" + user + "' logged in on fd " +
-                          std::to_string(conn->fd);
-
-          nlohmann::json sys_j;
-          sys_j["type"] = "system";
-          sys_j["msg"] = user + " joined";
-          std::string sys_str = sys_j.dump();
-          broadcastMessage(conn->fd, sys_str.c_str(), sys_str.length());
-
-          {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            for (const std::string &hist_msg : m_message_history) {
-              nlohmann::json hist_j;
-              hist_j["type"] = "history";
-              hist_j["msg"] = hist_msg;
-              std::string hist_str = hist_j.dump();
-
-              uint32_t hist_len = hist_str.length();
-              uint32_t nl = htonl(hist_len);
-              std::vector<char> packet(4 + hist_len);
-              memcpy(packet.data(), &nl, 4);
-              memcpy(packet.data() + 4, hist_str.c_str(), hist_len);
-              conn->write_data(packet.data(), packet.size());
-            }
-          }
-        } else if (type == "chat") {
-          std::string msg = j.value("msg", "");
-          std::string sender =
-              conn->username.empty() ? "Unknown" : conn->username;
-
-          LOG_INFO << "[" + sender + " to all]: " + msg;
-
-          nlohmann::json chat_j;
-          chat_j["type"] = "chat";
-          chat_j["user"] = sender;
-          chat_j["msg"] = msg;
-          std::string chat_str = chat_j.dump();
-
-          {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            std::string history_entry = sender + ": " + msg;
-            m_message_history.push_back(history_entry);
-
-            size_t history_size = 50;
-            if (m_config.count("history_size")) {
-              history_size = std::stoull(m_config["history_size"]);
-            }
-
-            while (m_message_history.size() > history_size) {
-              m_message_history.pop_front();
-            }
-          }
-
-          broadcastMessage(conn->fd, chat_str.c_str(), chat_str.length());
-        } else if (type == "private") {
-          std::string to_user = j.value("to", "");
-          std::string msg = j.value("msg", "");
-          std::string sender =
-              conn->username.empty() ? "Unknown" : conn->username;
-
-          LOG_INFO << "[" + sender + " -> " + to_user + "]: " + msg;
-
-          int target_fd = -1;
-          {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (m_online_users.count(to_user)) {
-              target_fd = m_online_users[to_user];
-            }
-          }
-
-          // Safe to read connections map since elements memory addr don't move
-          // and we just check presence
-          bool has_target = false;
-          {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            has_target = target_fd != -1 && m_connections.count(target_fd);
-          }
-
-          if (has_target) {
-            nlohmann::json private_j;
-            private_j["type"] = "private";
-            private_j["user"] = sender;
-            private_j["msg"] = msg;
-            std::string private_str = private_j.dump();
-
-            uint32_t n_len = htonl(private_str.length());
-            std::vector<char> packet(4 + private_str.length());
-            memcpy(packet.data(), &n_len, 4);
-            memcpy(packet.data() + 4, private_str.c_str(),
-                   private_str.length());
-
-            m_connections[target_fd]->write_data(packet.data(), packet.size());
-          } else {
-            nlohmann::json err_j;
-            err_j["type"] = "system";
-            err_j["msg"] = "user not online";
-            std::string err_str = err_j.dump();
-
-            uint32_t n_len = htonl(err_str.length());
-            std::vector<char> packet(4 + err_str.length());
-            memcpy(packet.data(), &n_len, 4);
-            memcpy(packet.data() + 4, err_str.c_str(), err_str.length());
-
-            conn->write_data(packet.data(), packet.size());
-            LOG_INFO << "User '" + to_user + "' not found. Error sent to sender.";
-          }
-        } else if (type == "list") {
-          nlohmann::json list_j;
-          list_j["type"] = "list";
-          list_j["users"] = nlohmann::json::array();
-
-          {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            for (const auto &pair : m_online_users) {
-              list_j["users"].push_back(pair.first);
-            }
-          }
-
-          std::string list_str = list_j.dump();
-          uint32_t n_len = htonl(list_str.length());
-          std::vector<char> packet(4 + list_str.length());
-          memcpy(packet.data(), &n_len, 4);
-          memcpy(packet.data() + 4, list_str.c_str(), list_str.length());
-
-          conn->write_data(packet.data(), packet.size());
-          LOG_INFO << "Sent active users list to fd " + std::to_string(conn->fd);
-        } else if (type == "heartbeat") {
-          std::lock_guard<std::mutex> lock(m_mutex);
-          conn->last_active = time(nullptr);
-        }
       } catch (const nlohmann::json::parse_error &e) {
         LOG_ERROR << "JSON parse error from fd " + std::to_string(conn->fd) +
                          ": " + e.what();
@@ -349,10 +197,7 @@ void IMServer::start() {
   LOG_INFO << "Server is listening on port " + std::to_string(m_port) + "...";
   m_running = true;
 
-  int thread_num = 0;
-  if (m_config.count("num_threads")) {
-    thread_num = std::stoi(m_config["num_threads"]);
-  }
+  int thread_num = Config::instance().getInt("num_threads", 0);
   m_thread_pool->setThreadNum(thread_num);
   m_thread_pool->start();
 
@@ -386,9 +231,10 @@ void IMServer::broadcastMessage(int sender_fd, const char *message,
   std::vector<int> targets;
   {
     std::lock_guard<std::mutex> lock(m_mutex);
-    for (const auto &pair : m_online_users) {
-      if (pair.second != sender_fd)
-        targets.push_back(pair.second);
+    for (const auto &pair : m_connections) {
+      if (pair.first != sender_fd) {
+        targets.push_back(pair.first);
+      }
     }
   }
 
@@ -400,35 +246,16 @@ void IMServer::broadcastMessage(int sender_fd, const char *message,
   }
 }
 
+bool IMServer::isConnectionActive(int fd) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_connections.count(fd) > 0;
+}
 
-
-void IMServer::loadConfig(const std::string &filename) {
-  std::ifstream file(filename);
-  if (!file.is_open()) {
-    std::cerr << "Warning: Could not open config file " << filename
-              << ", using defaults.\n";
-    return;
+void IMServer::sendToUser(int target_fd, const char* data, size_t len) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (m_connections.count(target_fd)) {
+    m_connections[target_fd]->write_data(data, len);
   }
-
-  std::string line;
-  while (std::getline(file, line)) {
-    if (line.empty() || line[0] == '#')
-      continue;
-
-    size_t delimiterPos = line.find('=');
-    if (delimiterPos != std::string::npos) {
-      std::string key = line.substr(0, delimiterPos);
-      std::string value = line.substr(delimiterPos + 1);
-
-      key.erase(0, key.find_first_not_of(" \t"));
-      key.erase(key.find_last_not_of(" \t") + 1);
-      value.erase(0, value.find_first_not_of(" \t"));
-      value.erase(value.find_last_not_of(" \t") + 1);
-
-      m_config[key] = value;
-    }
-  }
-  file.close();
 }
 
 // Removed main function

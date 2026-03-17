@@ -24,8 +24,11 @@ public:
 
   void start();
 
-private:
   void broadcastMessage(int sender_fd, const char *message, uint32_t len);
+  bool isConnectionActive(int fd);
+  void sendToUser(int target_fd, const char *data, size_t len);
+
+private:
   void setNonBlocking(int fd);
   void removeClient(int fd);
 
@@ -45,11 +48,6 @@ private:
   std::mutex m_mutex;
 
   std::unordered_map<int, std::unique_ptr<Connection>> m_connections;
-  std::unordered_map<std::string, int> m_online_users;
-  std::deque<std::string> m_message_history;
-  std::unordered_map<std::string, std::string> m_config;
-
-  void loadConfig(const std::string &filename);
 };
 
 #endif // SERVER_H
