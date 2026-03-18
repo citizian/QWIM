@@ -43,7 +43,7 @@ void Connection::handleRead() {
 
   // Parse remaining payload before destruction
   if (input_buffer.readableBytes() > 0 && m_messageCallback) {
-    m_messageCallback(this);
+    m_messageCallback(shared_from_this());
   }
 
   // Handle the disconnect downstream if needed
@@ -53,8 +53,9 @@ void Connection::handleRead() {
 }
 
 void Connection::handleClose() {
-  if (m_closeCallback)
-    m_closeCallback(this);
+  if (m_closeCallback) {
+    m_closeCallback(shared_from_this());
+  }
 }
 
 ssize_t Connection::read_data() {

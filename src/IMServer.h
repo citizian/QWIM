@@ -33,8 +33,8 @@ private:
   void removeClient(int fd);
 
   void handleNewConnection();
-  void onConnectionMessage(Connection *conn);
-  void onConnectionClose(Connection *conn);
+  void onConnectionMessage(std::shared_ptr<Connection> conn);
+  void onConnectionClose(std::shared_ptr<Connection> conn);
 
   int m_server_fd;
   int m_port;
@@ -47,7 +47,7 @@ private:
 
   std::mutex m_mutex;
 
-  std::unordered_map<int, std::unique_ptr<Connection>> m_connections;
+  std::unordered_map<int, std::shared_ptr<Connection>> m_connections;
 };
 
 #endif // SERVER_H

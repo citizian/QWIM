@@ -1,8 +1,11 @@
 #include "TimerManager.h"
+#include "Connection.h"
 
-void TimerManager::addTimer(int fd, time_t expireTime) {
-  m_timers.push({fd, expireTime});
-  m_expected_expire[fd] = expireTime;
+void TimerManager::addTimer(std::weak_ptr<Connection> weak_conn, time_t expireTime) {
+  if (auto conn = weak_conn.lock()) {
+    m_timers.push({weak_conn, expireTime});
+    m_expected_expire[conn->fd] = expireTime;
+  }
 }
 
 void TimerManager::removeTimer(int fd) {
@@ -11,8 +14,8 @@ void TimerManager::removeTimer(int fd) {
   m_expected_expire.erase(fd);
 }
 
-std::vector<int> TimerManager::checkTimeout(time_t now) {
-  std::vector<int> expired;
+std::vector<std::shared_ptr<Connection>> TimerManager::checkTimeout(time_t now) {
+  std::vector<std::shared_ptr<Connection>> expired;
 
   while (!m_timers.empty()) {
     Timer node = m_timers.top();
@@ -25,12 +28,14 @@ std::vector<int> TimerManager::checkTimeout(time_t now) {
 
     m_timers.pop();
 
-    // Validate if this timer is still active and hasn't been updated
-    auto it = m_expected_expire.find(node.fd);
-    if (it != m_expected_expire.end() && it->second == node.expireTime) {
-      // Valid timeout
-      expired.push_back(node.fd);
-      m_expected_expire.erase(it);
+    // The weak_ptr could be invalid if the connection closed early manually
+    if (auto conn = node.conn.lock()) {
+      auto it = m_expected_expire.find(conn->fd);
+      if (it != m_expected_expire.end() && it->second == node.expireTime) {
+        // Valid timeout
+        expired.push_back(conn);
+        m_expected_expire.erase(it);
+      }
     }
   }
 

@@ -104,7 +104,7 @@ IMServer::~IMServer() {
 void IMServer::removeClient(int cfd) {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_connections.count(cfd)) {
-    ChatService::instance().onDisconnect(m_connections[cfd].get());
+    ChatService::instance().onDisconnect(m_connections[cfd]);
 
     m_connections[cfd]->channel->disableWriting(); // force clean logic
     m_loop->removeChannel(
@@ -135,27 +135,28 @@ void IMServer::handleNewConnection() {
 
     {
       std::lock_guard<std::mutex> lock(m_mutex);
-      m_connections[client_fd] =
-          std::make_unique<Connection>(io_loop, client_fd);
+      auto conn = std::make_shared<Connection>(io_loop, client_fd);
+      m_connections[client_fd] = conn;
+      
       m_connections[client_fd]->setReadCallback(std::bind(
           &IMServer::onConnectionMessage, this, std::placeholders::_1));
       m_connections[client_fd]->setCloseCallback(
           std::bind(&IMServer::onConnectionClose, this, std::placeholders::_1));
 
       int timeout = Config::instance().getInt("heartbeat_timeout", 30);
-      m_timer_manager->addTimer(client_fd, time(nullptr) + timeout);
+      m_timer_manager->addTimer(conn, time(nullptr) + timeout);
     }
 
     LOG_INFO << "Client " + std::to_string(client_fd) + " connected!";
   }
 }
 
-void IMServer::onConnectionClose(Connection *conn) {
+void IMServer::onConnectionClose(std::shared_ptr<Connection> conn) {
   LOG_INFO << "Client " + std::to_string(conn->fd) + " disconnected";
   removeClient(conn->fd);
 }
 
-void IMServer::onConnectionMessage(Connection *conn) {
+void IMServer::onConnectionMessage(std::shared_ptr<Connection> conn) {
   while (true) {
     if (conn->input_buffer.readableBytes() < 4) {
       break;
@@ -177,7 +178,7 @@ void IMServer::onConnectionMessage(Connection *conn) {
           std::lock_guard<std::mutex> lock(m_mutex);
           conn->last_active = time(nullptr);
           int timeout = Config::instance().getInt("heartbeat_timeout", 30);
-          m_timer_manager->addTimer(conn->fd, time(nullptr) + timeout);
+          m_timer_manager->addTimer(conn, time(nullptr) + timeout);
         }
 
         std::string type = j.value("type", "");
@@ -205,16 +206,16 @@ void IMServer::start() {
 
   m_loop->setTickCallback([this]() {
     time_t now = time(nullptr);
-    std::vector<int> to_remove;
+    std::vector<std::shared_ptr<Connection>> to_remove;
     {
       std::lock_guard<std::mutex> lock(m_mutex);
       to_remove = m_timer_manager->checkTimeout(now);
     }
 
-    for (int fd : to_remove) {
-      LOG_INFO << "Client " + std::to_string(fd) +
+    for (auto& conn : to_remove) {
+      LOG_INFO << "Client " + std::to_string(conn->fd) +
                       " heartbeat timeout. Disconnecting.";
-      removeClient(fd);
+      removeClient(conn->fd);
     }
   });
 

@@ -17,7 +17,7 @@ void ChatService::init() {
     Router::instance().registerHandler("heartbeat", std::bind(&ChatService::handleHeartbeat, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
-void ChatService::onDisconnect(Connection* conn) {
+void ChatService::onDisconnect(std::shared_ptr<Connection> conn) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!conn->username.empty()) {
         std::string user = conn->username;
@@ -39,7 +39,7 @@ void ChatService::onDisconnect(Connection* conn) {
     }
 }
 
-void ChatService::handleLogin(Connection* conn, const nlohmann::json& payload, IMServer* server) {
+void ChatService::handleLogin(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server) {
     std::string user = payload.value("user", "Unknown");
 
     {
@@ -74,7 +74,7 @@ void ChatService::handleLogin(Connection* conn, const nlohmann::json& payload, I
     }
 }
 
-void ChatService::handleChat(Connection* conn, const nlohmann::json& payload, IMServer* server) {
+void ChatService::handleChat(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server) {
     std::string msg = payload.value("msg", "");
     std::string sender = conn->username.empty() ? "Unknown" : conn->username;
 
@@ -101,7 +101,7 @@ void ChatService::handleChat(Connection* conn, const nlohmann::json& payload, IM
     server->broadcastMessage(conn->fd, chat_str.c_str(), chat_str.length());
 }
 
-void ChatService::handlePrivate(Connection* conn, const nlohmann::json& payload, IMServer* server) {
+void ChatService::handlePrivate(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server) {
     std::string to_user = payload.value("to", "");
     std::string msg = payload.value("msg", "");
     std::string sender = conn->username.empty() ? "Unknown" : conn->username;
@@ -145,7 +145,7 @@ void ChatService::handlePrivate(Connection* conn, const nlohmann::json& payload,
     }
 }
 
-void ChatService::handleList(Connection* conn, const nlohmann::json& payload, IMServer* server) {
+void ChatService::handleList(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server) {
     nlohmann::json list_j;
     list_j["type"] = "list";
     list_j["users"] = nlohmann::json::array();
@@ -167,7 +167,7 @@ void ChatService::handleList(Connection* conn, const nlohmann::json& payload, IM
     LOG_INFO << "Sent active users list to fd " + std::to_string(conn->fd);
 }
 
-void ChatService::handleHeartbeat(Connection* conn, const nlohmann::json& payload, IMServer* server) {
+void ChatService::handleHeartbeat(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server) {
     // Heartbeat logic is mostly handled at the connection level for timeout renewal wrapper in IMServer,
     // but the actual application layer 'heartbeat' msg just arrives here. There is nothing extra to do in ChatService.
     LOG_INFO << "Received heartbeat from fd " + std::to_string(conn->fd);

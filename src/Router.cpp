@@ -10,7 +10,7 @@ void Router::registerHandler(const std::string& type, HandlerFunc handler) {
     handlers_[type] = handler;
 }
 
-void Router::route(const std::string& type, Connection* conn, const nlohmann::json& payload, IMServer* server) {
+void Router::route(const std::string& type, std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server) {
     auto it = handlers_.find(type);
     if (it != handlers_.end()) {
         it->second(conn, payload, server);

@@ -15,13 +15,13 @@ public:
 
     void init();
 
-    void onDisconnect(Connection* conn);
+    void onDisconnect(std::shared_ptr<Connection> conn);
 
-    void handleLogin(Connection* conn, const nlohmann::json& payload, IMServer* server);
-    void handleChat(Connection* conn, const nlohmann::json& payload, IMServer* server);
-    void handlePrivate(Connection* conn, const nlohmann::json& payload, IMServer* server);
-    void handleList(Connection* conn, const nlohmann::json& payload, IMServer* server);
-    void handleHeartbeat(Connection* conn, const nlohmann::json& payload, IMServer* server);
+    void handleLogin(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
+    void handleChat(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
+    void handlePrivate(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
+    void handleList(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
+    void handleHeartbeat(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
 
 private:
     ChatService() = default;

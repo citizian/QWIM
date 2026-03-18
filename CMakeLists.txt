@@ -15,3 +15,6 @@ target_link_libraries(server_bin PRIVATE Threads::Threads)
 
 add_executable(client_bin src/client.cpp)
 target_link_libraries(client_bin PRIVATE Threads::Threads)
+
+# Stress tester is now in stress_test/ with its own CMakeLists.txt
+# Run: cd stress_test && ./run.sh <server_ip> <port>

@@ -14,7 +14,7 @@
 class EventLoop;
 class Channel;
 
-class Connection {
+class Connection : public std::enable_shared_from_this<Connection> {
 public:
   int fd;
   Buffer input_buffer;
@@ -23,8 +23,8 @@ public:
   time_t last_active;
   std::unique_ptr<Channel> channel;
 
-  using MessageCallback = std::function<void(Connection *)>;
-  using CloseCallback = std::function<void(Connection *)>;
+  using MessageCallback = std::function<void(std::shared_ptr<Connection>)>;
+  using CloseCallback = std::function<void(std::shared_ptr<Connection>)>;
 
   Connection(EventLoop *loop, int fd);
   ~Connection();
