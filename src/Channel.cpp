@@ -9,7 +9,21 @@ Channel::~Channel() {
   // before deletion.
 }
 
+void Channel::tie(const std::shared_ptr<void>& owner) {
+  m_tie = owner;
+  m_tied = true;
+}
+
 void Channel::handleEvent() {
+  // If tied, lock the owner (Connection) to keep it alive during event handling.
+  // Without this, a read callback can trigger removeClient() which destroys
+  // the Connection and this Channel, causing use-after-free on subsequent checks.
+  std::shared_ptr<void> guard;
+  if (m_tied) {
+    guard = m_tie.lock();
+    if (!guard) return; // Owner already destroyed, skip
+  }
+
   if (m_revents & EPOLLIN) {
     if (m_readCallback)
       m_readCallback();

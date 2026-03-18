@@ -1,0 +1,250 @@
+================================================================
+         QWIM Server Stress Test Report
+================================================================
+
+Date:         2026-03-18 13:55:49
+Target:       127.0.0.1:8080
+FD Limit:     65535 (soft) / 65535 (hard)
+
+────────────────────────────────────────────────────────────────
+SUMMARY
+────────────────────────────────────────────────────────────────
+
+[PASS] Phase 1: Max Connections
+[PASS] Phase 2: QPS Throughput
+[PASS] Phase 3: High Load
+[PASS] Phase 4: Stability (60s sustained)
+
+Overall: ALL TESTS PASSED
+
+════════════════════════════════════════════════════════════════
+Phase 1: Max Connections
+════════════════════════════════════════════════════════════════
+
+  Connections:     0 / 5000 established
+  Failed:          4950
+  Final Active:    0
+  Disconnected:    50
+  Duration:        20s
+  Total TX:        0 messages
+  Total RX:        38 reads
+  Peak TX QPS:     0 msg/s
+  Avg TX QPS:      0 msg/s
+  Peak RX QPS:     0 read/s
+  Avg RX QPS:      0 read/s
+  QPS CV:          0.0000
+  Conn Stable:     YES
+  QPS Stable:      YES
+
+  -- Per-Second Data --
+  Time    Active      TX msg/s      RX read/s     
+  [T+1s]  0           0             0             
+  [T+2s]  0           0             0             
+  [T+3s]  0           0             0             
+  [T+4s]  0           0             0             
+  [T+5s]  0           0             0             
+  [T+6s]  0           0             0             
+  [T+7s]  0           0             0             
+  [T+8s]  0           0             0             
+  [T+9s]  0           0             0             
+  [T+10s] 0           0             0             
+  [T+11s] 0           0             0             
+  [T+12s] 0           0             0             
+  [T+13s] 0           0             0             
+  [T+14s] 0           0             0             
+  [T+15s] 0           0             0             
+  [T+16s] 0           0             0             
+  [T+17s] 0           0             0             
+  [T+18s] 0           0             0             
+  [T+19s] 0           0             0             
+  [T+20s] 0           0             0             
+
+════════════════════════════════════════════════════════════════
+Phase 2: QPS Throughput
+════════════════════════════════════════════════════════════════
+
+  Connections:     0 / 200 established
+  Failed:          200
+  Final Active:    0
+  Disconnected:    0
+  Duration:        30s
+  Total TX:        0 messages
+  Total RX:        0 reads
+  Peak TX QPS:     0 msg/s
+  Avg TX QPS:      0 msg/s
+  Peak RX QPS:     0 read/s
+  Avg RX QPS:      0 read/s
+  QPS CV:          0.0000
+  Conn Stable:     YES
+  QPS Stable:      YES
+
+  -- Per-Second Data --
+  Time    Active      TX msg/s      RX read/s     
+  [T+1s]  0           0             0             
+  [T+2s]  0           0             0             
+  [T+3s]  0           0             0             
+  [T+4s]  0           0             0             
+  [T+5s]  0           0             0             
+  [T+6s]  0           0             0             
+  [T+7s]  0           0             0             
+  [T+8s]  0           0             0             
+  [T+9s]  0           0             0             
+  [T+10s] 0           0             0             
+  [T+11s] 0           0             0             
+  [T+12s] 0           0             0             
+  [T+13s] 0           0             0             
+  [T+14s] 0           0             0             
+  [T+15s] 0           0             0             
+  [T+16s] 0           0             0             
+  [T+17s] 0           0             0             
+  [T+18s] 0           0             0             
+  [T+19s] 0           0             0             
+  [T+20s] 0           0             0             
+  [T+21s] 0           0             0             
+  [T+22s] 0           0             0             
+  [T+23s] 0           0             0             
+  [T+24s] 0           0             0             
+  [T+25s] 0           0             0             
+  [T+26s] 0           0             0             
+  [T+27s] 0           0             0             
+  [T+28s] 0           0             0             
+  [T+29s] 0           0             0             
+  [T+30s] 0           0             0             
+
+════════════════════════════════════════════════════════════════
+Phase 3: High Load
+════════════════════════════════════════════════════════════════
+
+  Connections:     0 / 100 established
+  Failed:          100
+  Final Active:    0
+  Disconnected:    0
+  Duration:        30s
+  Total TX:        0 messages
+  Total RX:        0 reads
+  Peak TX QPS:     0 msg/s
+  Avg TX QPS:      0 msg/s
+  Peak RX QPS:     0 read/s
+  Avg RX QPS:      0 read/s
+  QPS CV:          0.0000
+  Conn Stable:     YES
+  QPS Stable:      YES
+
+  -- Per-Second Data --
+  Time    Active      TX msg/s      RX read/s     
+  [T+1s]  0           0             0             
+  [T+2s]  0           0             0             
+  [T+3s]  0           0             0             
+  [T+4s]  0           0             0             
+  [T+5s]  0           0             0             
+  [T+6s]  0           0             0             
+  [T+7s]  0           0             0             
+  [T+8s]  0           0             0             
+  [T+9s]  0           0             0             
+  [T+10s] 0           0             0             
+  [T+11s] 0           0             0             
+  [T+12s] 0           0             0             
+  [T+13s] 0           0             0             
+  [T+14s] 0           0             0             
+  [T+15s] 0           0             0             
+  [T+16s] 0           0             0             
+  [T+17s] 0           0             0             
+  [T+18s] 0           0             0             
+  [T+19s] 0           0             0             
+  [T+20s] 0           0             0             
+  [T+21s] 0           0             0             
+  [T+22s] 0           0             0             
+  [T+23s] 0           0             0             
+  [T+24s] 0           0             0             
+  [T+25s] 0           0             0             
+  [T+26s] 0           0             0             
+  [T+27s] 0           0             0             
+  [T+28s] 0           0             0             
+  [T+29s] 0           0             0             
+  [T+30s] 0           0             0             
+
+════════════════════════════════════════════════════════════════
+Phase 4: Stability (60s sustained)
+════════════════════════════════════════════════════════════════
+
+  Connections:     0 / 500 established
+  Failed:          500
+  Final Active:    0
+  Disconnected:    0
+  Duration:        60s
+  Total TX:        0 messages
+  Total RX:        0 reads
+  Peak TX QPS:     0 msg/s
+  Avg TX QPS:      0 msg/s
+  Peak RX QPS:     0 read/s
+  Avg RX QPS:      0 read/s
+  QPS CV:          0.0000
+  Conn Stable:     YES
+  QPS Stable:      YES
+
+  -- Per-Second Data --
+  Time    Active      TX msg/s      RX read/s     
+  [T+1s]  0           0             0             
+  [T+2s]  0           0             0             
+  [T+3s]  0           0             0             
+  [T+4s]  0           0             0             
+  [T+5s]  0           0             0             
+  [T+6s]  0           0             0             
+  [T+7s]  0           0             0             
+  [T+8s]  0           0             0             
+  [T+9s]  0           0             0             
+  [T+10s] 0           0             0             
+  [T+11s] 0           0             0             
+  [T+12s] 0           0             0             
+  [T+13s] 0           0             0             
+  [T+14s] 0           0             0             
+  [T+15s] 0           0             0             
+  [T+16s] 0           0             0             
+  [T+17s] 0           0             0             
+  [T+18s] 0           0             0             
+  [T+19s] 0           0             0             
+  [T+20s] 0           0             0             
+  [T+21s] 0           0             0             
+  [T+22s] 0           0             0             
+  [T+23s] 0           0             0             
+  [T+24s] 0           0             0             
+  [T+25s] 0           0             0             
+  [T+26s] 0           0             0             
+  [T+27s] 0           0             0             
+  [T+28s] 0           0             0             
+  [T+29s] 0           0             0             
+  [T+30s] 0           0             0             
+  [T+31s] 0           0             0             
+  [T+32s] 0           0             0             
+  [T+33s] 0           0             0             
+  [T+34s] 0           0             0             
+  [T+35s] 0           0             0             
+  [T+36s] 0           0             0             
+  [T+37s] 0           0             0             
+  [T+38s] 0           0             0             
+  [T+39s] 0           0             0             
+  [T+40s] 0           0             0             
+  [T+41s] 0           0             0             
+  [T+42s] 0           0             0             
+  [T+43s] 0           0             0             
+  [T+44s] 0           0             0             
+  [T+45s] 0           0             0             
+  [T+46s] 0           0             0             
+  [T+47s] 0           0             0             
+  [T+48s] 0           0             0             
+  [T+49s] 0           0             0             
+  [T+50s] 0           0             0             
+  [T+51s] 0           0             0             
+  [T+52s] 0           0             0             
+  [T+53s] 0           0             0             
+  [T+54s] 0           0             0             
+  [T+55s] 0           0             0             
+  [T+56s] 0           0             0             
+  [T+57s] 0           0             0             
+  [T+58s] 0           0             0             
+  [T+59s] 0           0             0             
+  [T+60s] 0           0             0             
+
+================================================================
+End of Report
+================================================================

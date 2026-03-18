@@ -107,7 +107,7 @@ void IMServer::removeClient(int cfd) {
     ChatService::instance().onDisconnect(m_connections[cfd]);
 
     m_connections[cfd]->channel->disableWriting(); // force clean logic
-    m_loop->removeChannel(
+    m_connections[cfd]->channel->getLoop()->removeChannel(
         m_connections[cfd]->channel.get()); // The subloop cleans his epoll
     m_timer_manager->removeTimer(cfd);
     m_connections.erase(cfd);
@@ -137,6 +137,7 @@ void IMServer::handleNewConnection() {
       std::lock_guard<std::mutex> lock(m_mutex);
       auto conn = std::make_shared<Connection>(io_loop, client_fd);
       m_connections[client_fd] = conn;
+      conn->channel->tie(conn);
       
       m_connections[client_fd]->setReadCallback(std::bind(
           &IMServer::onConnectionMessage, this, std::placeholders::_1));

@@ -2,6 +2,7 @@
 #define CHANNEL_H
 
 #include <functional>
+#include <memory>
 #include <sys/epoll.h>
 
 class EventLoop;
@@ -14,6 +15,7 @@ public:
   ~Channel();
 
   void handleEvent();
+  void tie(const std::shared_ptr<void>& owner);
   void enableReading();
   void enableWriting();
   void disableWriting();
@@ -23,6 +25,7 @@ public:
   uint32_t getEvents() const { return m_events; }
   uint32_t getRevents() const { return m_revents; }
   void setRevents(uint32_t rev) { m_revents = rev; }
+  EventLoop *getLoop() const { return m_loop; }
 
   bool isInEpoll() const { return m_in_epoll; }
   void setInEpoll(bool in) { m_in_epoll = in; }
@@ -37,6 +40,8 @@ private:
   uint32_t m_events;
   uint32_t m_revents;
   bool m_in_epoll;
+  std::weak_ptr<void> m_tie;
+  bool m_tied{false};
 
   EventCallback m_readCallback;
   EventCallback m_writeCallback;
