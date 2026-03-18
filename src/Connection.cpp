@@ -84,19 +84,38 @@ void Connection::handleWrite() {
     return;
   }
 
-  ssize_t bytes_written =
-      send(fd, output_buffer.peek(), output_buffer.readableBytes(), 0);
-  if (bytes_written > 0) {
-    output_buffer.retrieve(bytes_written);
-    if (output_buffer.readableBytes() == 0) {
-      if (channel->isWriting()) {
-        channel->disableWriting();
-      }
+  // Send in a loop to handle large buffers and avoid SIGPIPE by using MSG_NOSIGNAL.
+  while (output_buffer.readableBytes() > 0) {
+    // Limit single send size to avoid surprising large requests.
+    size_t to_send = output_buffer.readableBytes();
+    if (to_send > 64 * 1024) to_send = 64 * 1024;
+
+    ssize_t bytes_written =
+        ::send(fd, output_buffer.peek(), to_send, MSG_NOSIGNAL);
+
+    if (bytes_written > 0) {
+      output_buffer.retrieve(static_cast<size_t>(bytes_written));
+      continue; // try to flush remaining data
     }
-  } else if (bytes_written < 0) {
-    if (errno != EAGAIN && errno != EWOULDBLOCK) {
-      lock.unlock(); // Prevent deadlock since handleClose goes up to IMServer
-      handleClose();
+
+    if (bytes_written == 0) {
+      // Nothing written; treat as would-block
+      break;
     }
+
+    // bytes_written < 0
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // Can't write now, wait for next writable event
+      break;
+    }
+
+    // Other errors (including EPIPE) - close connection
+    lock.unlock(); // Prevent deadlock since handleClose may call back into server
+    handleClose();
+    return;
+  }
+
+  if (output_buffer.readableBytes() == 0) {
+    if (channel->isWriting()) channel->disableWriting();
   }
 }

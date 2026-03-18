@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/epoll.h>
 #include <sys/resource.h>
+#include <sys/poll.h>
 #include <fcntl.h>
 #include <fstream>
 #include <sstream>
@@ -52,18 +53,16 @@ int create_nonblocking_socket() {
 }
 
 bool wait_for_connect(int fd, int timeout_ms) {
-    fd_set wset;
-    FD_ZERO(&wset);
-    FD_SET(fd, &wset);
-    struct timeval tv;
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-    int ret = select(fd + 1, nullptr, &wset, nullptr, &tv);
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLOUT;
+    int ret = poll(&pfd, 1, timeout_ms);
     if (ret > 0) {
         int so_error = 0;
         socklen_t len = sizeof(so_error);
-        getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len);
-        return so_error == 0;
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len) == 0) {
+            return so_error == 0;
+        }
     }
     return false;
 }
