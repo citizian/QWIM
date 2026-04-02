@@ -1,17 +1,17 @@
 #include "IMServer.h"
-#include "Logger.h"
 #include "AsyncLogger.h"
-#include "Config.h"
-#include "Router.h"
 #include "ChatService.h"
+#include "Config.h"
+#include "Logger.h"
+#include "Router.h"
 #include <cstring>
 
 std::unique_ptr<AsyncLogger> g_asyncLogger;
 
-void asyncOutput(const char* msg, int len) {
-    if (g_asyncLogger) {
-        g_asyncLogger->append(msg, len);
-    }
+void asyncOutput(const char *msg, int len) {
+  if (g_asyncLogger) {
+    g_asyncLogger->append(msg, len);
+  }
 }
 
 #include <fcntl.h>
@@ -32,21 +32,28 @@ void IMServer::setNonBlocking(int fd) {
 IMServer::IMServer(const std::string &config_file) : m_running(false) {
   Config::instance().load(config_file);
 
-  std::string logfile = Config::instance().getString("logfile", "logs/server.log");
-  
+  std::string logfile =
+      Config::instance().getString("logfile", "logs/server.log");
+
   std::string log_level = Config::instance().getString("log_level", "INFO");
-  if (log_level == "TRACE") Logger::setLogLevel(TRACE);
-  else if (log_level == "DEBUG") Logger::setLogLevel(DEBUG);
-  else if (log_level == "INFO") Logger::setLogLevel(INFO);
-  else if (log_level == "WARN") Logger::setLogLevel(WARN);
-  else if (log_level == "ERROR") Logger::setLogLevel(ERROR);
-  else if (log_level == "FATAL") Logger::setLogLevel(FATAL);
+  if (log_level == "TRACE")
+    Logger::setLogLevel(TRACE);
+  else if (log_level == "DEBUG")
+    Logger::setLogLevel(DEBUG);
+  else if (log_level == "INFO")
+    Logger::setLogLevel(INFO);
+  else if (log_level == "WARN")
+    Logger::setLogLevel(WARN);
+  else if (log_level == "ERROR")
+    Logger::setLogLevel(ERROR);
+  else if (log_level == "FATAL")
+    Logger::setLogLevel(FATAL);
 
   g_asyncLogger.reset(new AsyncLogger(logfile, 100 * 1024 * 1024));
   Logger::setOutput(asyncOutput);
   g_asyncLogger->start();
 
-  m_port = Config::instance().getInt("port", 8080);
+  m_port = Config::instance().getInt("port", 8081);
 
   m_loop = std::make_unique<EventLoop>();
   m_thread_pool = std::make_unique<EventLoopThreadPool>(m_loop.get());
@@ -138,7 +145,7 @@ void IMServer::handleNewConnection() {
       auto conn = std::make_shared<Connection>(io_loop, client_fd);
       m_connections[client_fd] = conn;
       conn->channel->tie(conn);
-      
+
       m_connections[client_fd]->setReadCallback(std::bind(
           &IMServer::onConnectionMessage, this, std::placeholders::_1));
       m_connections[client_fd]->setCloseCallback(
@@ -213,7 +220,7 @@ void IMServer::start() {
       to_remove = m_timer_manager->checkTimeout(now);
     }
 
-    for (auto& conn : to_remove) {
+    for (auto &conn : to_remove) {
       LOG_INFO << "Client " + std::to_string(conn->fd) +
                       " heartbeat timeout. Disconnecting.";
       removeClient(conn->fd);
@@ -253,7 +260,7 @@ bool IMServer::isConnectionActive(int fd) {
   return m_connections.count(fd) > 0;
 }
 
-void IMServer::sendToUser(int target_fd, const char* data, size_t len) {
+void IMServer::sendToUser(int target_fd, const char *data, size_t len) {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_connections.count(target_fd)) {
     m_connections[target_fd]->write_data(data, len);

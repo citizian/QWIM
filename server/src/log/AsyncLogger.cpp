@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <iostream>
 
+#include <filesystem>
+#include <system_error>
+
 AsyncLogger::AsyncLogger(std::string basename, off_t rollSize, int flushInterval)
     : basename_(basename),
       rollSize_(rollSize),
@@ -44,6 +47,11 @@ void AsyncLogger::threadFunc() {
     BufferVector buffersToWrite;
     buffersToWrite.reserve(16);
 
+    std::filesystem::path logPath(basename_);
+    if (logPath.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(logPath.parent_path(), ec);
+    }
     FILE* fp = fopen(basename_.c_str(), "ae"); 
     if (!fp) {
         std::cerr << "AsyncLogger fail to open file " << basename_ << std::endl;
