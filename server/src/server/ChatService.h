@@ -17,6 +17,7 @@ public:
 
     void onDisconnect(std::shared_ptr<Connection> conn);
 
+    void handleRegister(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
     void handleLogin(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
     void handleChat(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
     void handlePrivate(std::shared_ptr<Connection> conn, const nlohmann::json& payload, IMServer* server);
@@ -31,5 +32,4 @@ private:
 
     std::mutex mutex_;
     std::unordered_map<std::string, int> online_users_;
-    std::deque<std::string> message_history_;
 };

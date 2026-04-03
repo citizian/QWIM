@@ -4,6 +4,7 @@
 #include "Config.h"
 #include "Logger.h"
 #include "Router.h"
+#include "MySQLPool.h"
 #include <cstring>
 
 std::unique_ptr<AsyncLogger> g_asyncLogger;
@@ -58,6 +59,16 @@ IMServer::IMServer(const std::string &config_file) : m_running(false) {
   m_loop = std::make_unique<EventLoop>();
   m_thread_pool = std::make_unique<EventLoopThreadPool>(m_loop.get());
   m_timer_manager = std::make_unique<TimerManager>();
+
+  MySQLPool::instance().init(
+      Config::instance().getString("db_host", "127.0.0.1"),
+      Config::instance().getString("db_user", "root"),
+      Config::instance().getString("db_password", "password"),
+      Config::instance().getString("db_name", "qwim"),
+      Config::instance().getInt("db_port", 3306),
+      Config::instance().getInt("db_pool_init_size", 5),
+      Config::instance().getInt("db_pool_max_size", 20)
+  );
 
   ChatService::instance().init();
 

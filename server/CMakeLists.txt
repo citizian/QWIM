@@ -11,6 +11,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/base)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/log)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/net)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/server)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/db)
 
 # Add third-party libraries
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/json)
@@ -32,8 +33,12 @@ add_executable(server_bin
     src/log/LogStream.cpp 
     src/log/AsyncLogger.cpp 
     src/base/Config.cpp
+    src/db/MySQLPool.cpp
+    src/db/UserModel.cpp
+    src/db/MessageModel.cpp
+    src/base/JwtUtils.cpp
 )
-target_link_libraries(server_bin PRIVATE Threads::Threads)
+target_link_libraries(server_bin PRIVATE Threads::Threads mysqlclient crypto)
 
 add_executable(minicl src/minicl/minicl.cpp)
 target_link_libraries(minicl PRIVATE Threads::Threads)
